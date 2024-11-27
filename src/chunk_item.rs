@@ -12,11 +12,11 @@ use zarrs::{
     storage::{MaybeBytes, ReadableWritableListableStorageTraits, StorageError, StoreKey},
 };
 
-use crate::utils::PyErrExt;
+use crate::{utils::PyErrExt, StorePath};
 
 pub(crate) type Raw<'a> = (
-    // store path
-    String,
+    // store root and path
+    StorePath,
     // shape
     Vec<u64>,
     // data type
@@ -34,7 +34,7 @@ pub(crate) type RawWithIndices<'a> = (
 );
 
 pub(crate) trait IntoItem<T, S>: std::marker::Sized {
-    fn store_path(&self) -> &str;
+    fn store_path(&self) -> &StorePath;
     fn into_item(
         self,
         store: Arc<dyn ReadableWritableListableStorageTraits>,
@@ -90,7 +90,7 @@ impl ChunksItem for WithSubset {
 }
 
 impl<'a> IntoItem<Basic, ()> for Raw<'a> {
-    fn store_path(&self) -> &str {
+    fn store_path(&self) -> &StorePath {
         &self.0
     }
     fn into_item(
@@ -110,7 +110,7 @@ impl<'a> IntoItem<Basic, ()> for Raw<'a> {
 }
 
 impl IntoItem<WithSubset, &[u64]> for RawWithIndices<'_> {
-    fn store_path(&self) -> &str {
+    fn store_path(&self) -> &StorePath {
         &self.0 .0
     }
     fn into_item(

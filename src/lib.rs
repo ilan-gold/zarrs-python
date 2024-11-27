@@ -25,12 +25,15 @@ use zarrs::storage::{ReadableWritableListableStorageTraits, StorageHandle, Store
 
 mod chunk_item;
 mod codec_pipeline_store_filesystem;
+mod codec_pipeline_store_http;
 mod concurrency;
+mod runtime;
 #[cfg(test)]
 mod tests;
 mod utils;
 
 use codec_pipeline_store_filesystem::CodecPipelineStoreFilesystem;
+use codec_pipeline_store_http::CodecPipelineStoreHTTP;
 use utils::{PyErrExt, PyUntypedArrayExt};
 
 trait CodecPipelineStore: Send + Sync {
@@ -50,10 +53,14 @@ pub struct CodecPipelineImpl {
     pub(crate) num_threads: usize,
 }
 
+/// A store root and path pair.
+// TODO: Prefer a struct with named fields, but I couldn't be bothered to figure out how to do that with stubgen etc
+type StorePath = (String, String);
+
 impl CodecPipelineImpl {
     fn get_store_and_path(
         &self,
-        store_path: &str,
+        store_path: &StorePath,
     ) -> PyResult<(Arc<dyn ReadableWritableListableStorageTraits>, String)> {
         let mut gstore = self.store.lock().map_err(|_| {
             PyErr::new::<PyRuntimeError, _>("failed to lock the store mutex".to_string())
@@ -61,17 +68,20 @@ impl CodecPipelineImpl {
 
         #[allow(clippy::collapsible_if)]
         if gstore.is_none() {
-            if store_path.starts_with("file://") {
+            if store_path.0.is_empty() && store_path.1.starts_with("file://") {
                 *gstore = Some(Arc::new(CodecPipelineStoreFilesystem::new()?));
+            } else if store_path.0.starts_with("http://") || store_path.0.starts_with("https://") {
+                *gstore = Some(Arc::new(CodecPipelineStoreHTTP::new(&store_path.0)?));
             }
             // TODO: Add support for more stores
         }
 
         if let Some(gstore) = gstore.as_ref() {
-            Ok((gstore.store(), gstore.chunk_path(store_path)?))
+            Ok((gstore.store(), gstore.chunk_path(&store_path.1)?))
         } else {
-            Err(PyErr::new::<PyTypeError, _>(format!(
-                "unsupported store for {store_path}"
+            Err(PyErr::new::<PyRuntimeError, _>(format!(
+                "unsupported store for root:{} path:{}",
+                store_path.0, store_path.1
             )))
         }
     }

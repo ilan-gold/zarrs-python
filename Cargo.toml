@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { version = "0.22.6", features = ["abi3-py311"] }
-zarrs = "0.18.0-beta.0"
+zarrs = "0.18.0"
 rayon_iter_concurrent_limit = "0.2.0"
 rayon = "1.10.0"
 # fix for https://stackoverflow.com/questions/76593417/package-openssl-was-not-found-in-the-pkg-config-search-path
@@ -19,6 +19,9 @@ numpy = "0.22.1"
 unsafe_cell_slice = "0.2.0"
 serde_json = "1.0.128"
 pyo3-stub-gen = { version = "0.6.1", git = "https://github.com/flying-sheep/pyo3-stub-gen.git", branch = "py-untyped-array" }
+opendal = { version = "0.50.2", features = ["services-http"] }
+tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
+zarrs_opendal = "0.4.0"
 
 [profile.release]
 lto = true
