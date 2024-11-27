@@ -1313,9 +1313,9 @@ dependencies = [
 
 [[package]]
 name = "zarrs"
-version = "0.18.0-beta.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cf2268e57ea21ebb30abee0f5707a73d59b3ee822d8cd92dffd4230286ea6af"
+checksum = "a2957fbdc365a192c71fe61ab2e759d4e77fbad598e032102b87b4188c32369d"
 dependencies = [
  "blosc-src",
  "bytemuck",
