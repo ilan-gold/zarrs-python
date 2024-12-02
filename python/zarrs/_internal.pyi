@@ -21,7 +21,7 @@ class CodecPipelineImpl:
         self,
         chunk_descriptions: typing.Sequence[
             tuple[
-                tuple[str, typing.Sequence[int], str, typing.Sequence[int]],
+                tuple[tuple[str, str], typing.Sequence[int], str, typing.Sequence[int]],
                 typing.Sequence[slice],
                 typing.Sequence[slice],
             ]
@@ -31,14 +31,14 @@ class CodecPipelineImpl:
     def retrieve_chunks(
         self,
         chunk_descriptions: typing.Sequence[
-            tuple[str, typing.Sequence[int], str, typing.Sequence[int]]
+            tuple[tuple[str, str], typing.Sequence[int], str, typing.Sequence[int]]
         ],
     ) -> list[numpy.typing.NDArray[numpy.uint8]]: ...
     def store_chunks_with_indices(
         self,
         chunk_descriptions: typing.Sequence[
             tuple[
-                tuple[str, typing.Sequence[int], str, typing.Sequence[int]],
+                tuple[tuple[str, str], typing.Sequence[int], str, typing.Sequence[int]],
                 typing.Sequence[slice],
                 typing.Sequence[slice],
             ]

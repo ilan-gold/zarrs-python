@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from zarr.core.indexing import SelectorTuple, is_integer
+from zarr.storage.local import LocalStore
+from zarr.storage.remote import RemoteStore
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -64,9 +66,23 @@ def selector_tuple_to_slice_selection(selector_tuple: SelectorTuple) -> list[sli
 
 def convert_chunk_to_primitive(
     byte_getter: ByteGetter | ByteSetter, chunk_spec: ArraySpec
-) -> tuple[str, ChunkCoords, str, Any]:
+) -> tuple[(str, str), ChunkCoords, str, Any]:
+    # TODO: Request upstream change to get store on codec pipeline initialisation, do not want to do all of this here
+    if isinstance(byte_getter.store, RemoteStore):
+        # TODO: Handle supported storage_options per store type (HTTP, S3, etc) and put in an enum (per store) for Rust
+        storage_options = byte_getter.store.fs.storage_options
+        if set(storage_options) > {"asynchronous"}:
+            raise NotImplementedError(f"Unsupported storage options: {storage_options}")
+        root = str(byte_getter.store.path)
+        path = str(byte_getter.path)
+    elif isinstance(byte_getter.store, LocalStore):
+        root = ""
+        path = str(byte_getter)
+    else:
+        # TODO: Check what other store types exist
+        raise NotImplementedError(f"Unsupported store type: {type(byte_getter.store)}")
     return (
-        str(byte_getter),
+        (root, path),
         chunk_spec.shape,
         str(chunk_spec.dtype),
         chunk_spec.fill_value.tobytes(),
