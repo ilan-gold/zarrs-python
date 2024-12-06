@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 from zarr.abc.codec import (
@@ -14,7 +14,7 @@ from zarr.core.config import config
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
-    from typing import Self
+    from typing import Any, Self
 
     from zarr.abc.store import ByteGetter, ByteSetter
     from zarr.core.array_spec import ArraySpec
@@ -32,10 +32,40 @@ from .utils import (
 )
 
 
-@dataclass(frozen=True)
+def get_codec_pipeline_impl(codec_metadata_json: str) -> CodecPipelineImpl:
+    return CodecPipelineImpl(
+        codec_metadata_json,
+        validate_checksums=config.get("codec_pipeline.validate_checksums", None),
+        # TODO: upstream zarr-python array.write_empty_chunks is not merged yet #2429
+        store_empty_chunks=config.get("array.write_empty_chunks", None),
+        chunk_concurrent_minimum=config.get(
+            "codec_pipeline.chunk_concurrent_minimum", None
+        ),
+        chunk_concurrent_maximum=config.get(
+            "codec_pipeline.chunk_concurrent_maximum", None
+        ),
+        num_threads=config.get("threading.max_workers", None),
+    )
+
+
+class ZarrsCodecPipelineState(TypedDict):
+    codec_metadata_json: str
+    codecs: tuple[Codec, ...]
+
+
+@dataclass
 class ZarrsCodecPipeline(CodecPipeline):
     codecs: tuple[Codec, ...]
     impl: CodecPipelineImpl
+    codec_metadata_json: str
+
+    def __getstate__(self) -> ZarrsCodecPipelineState:
+        return {"codec_metadata_json": self.codec_metadata_json, "codecs": self.codecs}
+
+    def __setstate__(self, state: ZarrsCodecPipelineState):
+        self.codecs = state["codecs"]
+        self.codec_metadata_json = state["codec_metadata_json"]
+        self.impl = get_codec_pipeline_impl(self.codec_metadata_json)
 
     def evolve_from_array_spec(self, array_spec: ArraySpec) -> Self:
         raise NotImplementedError("evolve_from_array_spec")
@@ -49,22 +79,9 @@ class ZarrsCodecPipeline(CodecPipeline):
         # https://github.com/zarr-developers/zarr-python/issues/2409
         # https://github.com/zarr-developers/zarr-python/pull/2429
         return cls(
+            codec_metadata_json=codec_metadata_json,
             codecs=tuple(codecs),
-            impl=CodecPipelineImpl(
-                codec_metadata_json,
-                validate_checksums=config.get(
-                    "codec_pipeline.validate_checksums", None
-                ),
-                # TODO: upstream zarr-python array.write_empty_chunks is not merged yet #2429
-                store_empty_chunks=config.get("array.write_empty_chunks", None),
-                chunk_concurrent_minimum=config.get(
-                    "codec_pipeline.chunk_concurrent_minimum", None
-                ),
-                chunk_concurrent_maximum=config.get(
-                    "codec_pipeline.chunk_concurrent_maximum", None
-                ),
-                num_threads=config.get("threading.max_workers", None),
-            ),
+            impl=get_codec_pipeline_impl(codec_metadata_json),
         )
 
     @property

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import operator
+import pickle
 import tempfile
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -229,3 +230,13 @@ def test_ellipsis_indexing_invalid(arr: zarr.Array):
         # zarrs-python error: ValueError: operands could not be broadcast together with shapes (4,) (3,)
         # numpy error: ValueError: could not broadcast input array from shape (3,) into shape (4,)
         arr[2, ...] = stored_value
+
+
+def test_pickle(arr: zarr.Array, tmp_path: Path):
+    arr[:] = np.arange(reduce(operator.mul, arr.shape, 1)).reshape(arr.shape)
+    expected = arr[:]
+    with Path.open(tmp_path / "arr.pickle", "wb") as f:
+        pickle.dump(arr._async_array.codec_pipeline, f)
+    with Path.open(tmp_path / "arr.pickle", "rb") as f:
+        object.__setattr__(arr._async_array, "codec_pipeline", pickle.load(f))
+    assert (arr[:] == expected).all()
