@@ -59,6 +59,8 @@ zarr.config.set({
 })
 ```
 
+If the `ZarrsCodecPipeline` is pickled, and then un-pickled, and during that time one of `store_empty_chunks`, `chunk_concurrent_minimum`, `chunk_concurrent_maximum`, or `num_threads` has changed, the newly un-pickled version will pick up the new value.  However, one a `ZarrsCodecPipeline` object has been instantiated, these values are then fixed.  This may change in the future as guidance from the `zarr` community becomes clear.
+
 ## Concurrency
 
 Concurrency can be classified into two types:
