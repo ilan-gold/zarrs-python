@@ -1,5 +1,12 @@
 # zarrs-python
 
+[![PyPI](https://img.shields.io/pypi/v/zarrs.svg)](https://pypi.org/project/zarrs)
+[![Downloads](https://static.pepy.tech/badge/zarrs/month)](https://pepy.tech/project/zarrs)
+[![Downloads](https://static.pepy.tech/badge/zarrs)](https://pepy.tech/project/zarrs)
+[![Stars](https://img.shields.io/github/stars/ilan-gold/zarrs-python?style=flat&logo=github&color=yellow)](https://github.com/ilan-gold/zarrs-python/stargazers)
+![CI](https://github.com/ilan-gold/zarrs-python/actions/workflows/ci.yml/badge.svg)
+![CD](https://github.com/ilan-gold/zarrs-python/actions/workflows/cd.yml/badge.svg)
+
 ```{warning}
 ⚠️ The version of `zarr-python` we currently depend on is still in pre-release and this
 package is accordingly extremely experimental.
