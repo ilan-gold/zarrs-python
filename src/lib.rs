@@ -7,10 +7,11 @@ use numpy::{IntoPyArray, PyArray1, PyUntypedArray, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use unsafe_cell_slice::UnsafeCellSlice;
 use zarrs::array::codec::{
@@ -25,17 +26,19 @@ use zarrs::storage::{ReadableWritableListableStorageTraits, StorageHandle, Store
 
 mod chunk_item;
 mod codec_pipeline_store_filesystem;
+mod codec_pipeline_store_http;
 mod concurrency;
+mod runtime;
 #[cfg(test)]
 mod tests;
 mod utils;
 
-use codec_pipeline_store_filesystem::CodecPipelineStoreFilesystem;
+use codec_pipeline_store_filesystem::{CodecPipelineStoreFilesystem, FilesystemStoreConfig};
+use codec_pipeline_store_http::{CodecPipelineStoreHTTP, HttpStoreConfig};
 use utils::{PyErrExt, PyUntypedArrayExt};
 
 trait CodecPipelineStore: Send + Sync {
     fn store(&self) -> Arc<dyn ReadableWritableListableStorageTraits>;
-    fn chunk_path(&self, store_path: &str) -> PyResult<String>;
 }
 
 // TODO: Use a OnceLock for store with get_or_try_init when stabilised?
@@ -50,29 +53,72 @@ pub struct CodecPipelineImpl {
     pub(crate) num_threads: usize,
 }
 
+#[gen_stub_pyclass_enum]
+enum StoreConfig {
+    Filesystem(FilesystemStoreConfig),
+    Http(HttpStoreConfig),
+    // TODO: Add support for more stores
+}
+
+impl<'py> FromPyObject<'py> for StoreConfig {
+    fn extract_bound(store: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let name = store.get_type().name()?;
+        let name = name.to_str()?;
+        match name {
+            "LocalStore" => {
+                let root: String = store
+                    .getattr("root")?
+                    .call_method("as_posix", (), None)?
+                    .extract()?;
+                Ok(StoreConfig::Filesystem(FilesystemStoreConfig::new(root)))
+            }
+            "RemoteStore" => {
+                let fs = store.getattr("fs")?;
+                let fs_name = fs.get_type().name()?;
+                let fs_name = fs_name.to_str()?;
+                let path: String = store.getattr("path")?.extract()?;
+                let storage_options: HashMap<String, Bound<'py, PyAny>> =
+                    fs.getattr("storage_options")?.extract()?;
+                match fs_name {
+                    "HTTPFileSystem" => Ok(StoreConfig::Http(HttpStoreConfig::new(
+                        &path,
+                        &storage_options,
+                    )?)),
+                    _ => Err(PyErr::new::<PyValueError, _>(
+                        "zarrs-python only supports a HTTPFileSystem RemoteStore".to_string(),
+                    )),
+                }
+            }
+            _ => Err(PyErr::new::<PyValueError, _>(
+                "zarrs-python only supports LocalStore and RemoteStore".to_string(),
+            )),
+        }
+    }
+}
+
 impl CodecPipelineImpl {
-    fn get_store_and_path(
+    fn get_store_from_config(
         &self,
-        store_path: &str,
-    ) -> PyResult<(Arc<dyn ReadableWritableListableStorageTraits>, String)> {
+        config: &StoreConfig,
+    ) -> PyResult<Arc<dyn ReadableWritableListableStorageTraits>> {
         let mut gstore = self.store.lock().map_err(|_| {
             PyErr::new::<PyRuntimeError, _>("failed to lock the store mutex".to_string())
         })?;
 
-        #[allow(clippy::collapsible_if)]
-        if gstore.is_none() {
-            if store_path.starts_with("file://") {
-                *gstore = Some(Arc::new(CodecPipelineStoreFilesystem::new()?));
-            }
-            // TODO: Add support for more stores
-        }
-
+        // TODO: Request upstream change to get store on codec pipeline initialisation, do not want to do all of this here
         if let Some(gstore) = gstore.as_ref() {
-            Ok((gstore.store(), gstore.chunk_path(store_path)?))
+            Ok(gstore.store())
         } else {
-            Err(PyErr::new::<PyTypeError, _>(format!(
-                "unsupported store for {store_path}"
-            )))
+            match config {
+                StoreConfig::Filesystem(config) => {
+                    *gstore = Some(Arc::new(CodecPipelineStoreFilesystem::new(config)?));
+                }
+                StoreConfig::Http(config) => {
+                    *gstore = Some(Arc::new(CodecPipelineStoreHTTP::new(config)?));
+                }
+            }
+            let gstore = gstore.as_ref().expect("store was just initialised");
+            Ok(gstore.store())
         }
     }
 
@@ -84,7 +130,9 @@ impl CodecPipelineImpl {
         chunk_descriptions
             .into_iter()
             .map(|raw| {
-                let (store, path) = self.get_store_and_path(raw.store_path())?;
+                // TODO: Prefer to get the store once, and assume it is the same for all chunks
+                let store = self.get_store_from_config(raw.store_config())?;
+                let path = raw.path();
                 let key = StoreKey::new(path).map_py_err::<PyValueError>()?;
                 raw.into_item(store, key, shape)
             })
