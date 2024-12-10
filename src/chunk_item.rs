@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, sync::Arc};
+use std::num::NonZeroU64;
 
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
@@ -9,13 +9,15 @@ use zarrs::{
     array::{ChunkRepresentation, DataType, FillValue},
     array_subset::ArraySubset,
     metadata::v3::{array::data_type::DataTypeMetadataV3, MetadataV3},
-    storage::{MaybeBytes, ReadableWritableListableStorageTraits, StorageError, StoreKey},
+    storage::{MaybeBytes, ReadableWritableListableStorage, StorageError, StoreKey},
 };
 
-use crate::utils::PyErrExt;
+use crate::{utils::PyErrExt, StoreConfigType};
 
 pub(crate) type Raw<'a> = (
-    // store path
+    // store
+    StoreConfigType,
+    // path
     String,
     // shape
     Vec<u64>,
@@ -34,17 +36,18 @@ pub(crate) type RawWithIndices<'a> = (
 );
 
 pub(crate) trait IntoItem<T, S>: std::marker::Sized {
-    fn store_path(&self) -> &str;
+    fn store_config(&self) -> &StoreConfigType;
+    fn path(&self) -> &str;
     fn into_item(
         self,
-        store: Arc<dyn ReadableWritableListableStorageTraits>,
+        store: ReadableWritableListableStorage,
         key: StoreKey,
         shape: S,
     ) -> PyResult<T>;
 }
 
 pub(crate) trait ChunksItem {
-    fn store(&self) -> Arc<dyn ReadableWritableListableStorageTraits>;
+    fn store(&self) -> ReadableWritableListableStorage;
     fn key(&self) -> &StoreKey;
     fn representation(&self) -> &ChunkRepresentation;
 
@@ -54,7 +57,7 @@ pub(crate) trait ChunksItem {
 }
 
 pub(crate) struct Basic {
-    store: Arc<dyn ReadableWritableListableStorageTraits>,
+    store: ReadableWritableListableStorage,
     key: StoreKey,
     representation: ChunkRepresentation,
 }
@@ -66,7 +69,7 @@ pub(crate) struct WithSubset {
 }
 
 impl ChunksItem for Basic {
-    fn store(&self) -> Arc<dyn ReadableWritableListableStorageTraits> {
+    fn store(&self) -> ReadableWritableListableStorage {
         self.store.clone()
     }
     fn key(&self) -> &StoreKey {
@@ -78,7 +81,7 @@ impl ChunksItem for Basic {
 }
 
 impl ChunksItem for WithSubset {
-    fn store(&self) -> Arc<dyn ReadableWritableListableStorageTraits> {
+    fn store(&self) -> ReadableWritableListableStorage {
         self.item.store.clone()
     }
     fn key(&self) -> &StoreKey {
@@ -90,16 +93,21 @@ impl ChunksItem for WithSubset {
 }
 
 impl<'a> IntoItem<Basic, ()> for Raw<'a> {
-    fn store_path(&self) -> &str {
+    fn store_config(&self) -> &StoreConfigType {
         &self.0
     }
+
+    fn path(&self) -> &str {
+        &self.1
+    }
+
     fn into_item(
         self,
-        store: Arc<dyn ReadableWritableListableStorageTraits>,
+        store: ReadableWritableListableStorage,
         key: StoreKey,
         (): (),
     ) -> PyResult<Basic> {
-        let (_, chunk_shape, dtype, fill_value) = self;
+        let (_, _, chunk_shape, dtype, fill_value) = self;
         let representation = get_chunk_representation(chunk_shape, &dtype, fill_value)?;
         Ok(Basic {
             store,
@@ -110,17 +118,22 @@ impl<'a> IntoItem<Basic, ()> for Raw<'a> {
 }
 
 impl IntoItem<WithSubset, &[u64]> for RawWithIndices<'_> {
-    fn store_path(&self) -> &str {
+    fn store_config(&self) -> &StoreConfigType {
         &self.0 .0
     }
+
+    fn path(&self) -> &str {
+        &self.0 .1
+    }
+
     fn into_item(
         self,
-        store: Arc<dyn ReadableWritableListableStorageTraits>,
+        store: ReadableWritableListableStorage,
         key: StoreKey,
         shape: &[u64],
     ) -> PyResult<WithSubset> {
         let (raw, selection, chunk_selection) = self;
-        let chunk_shape = raw.1.clone();
+        let chunk_shape = raw.2.clone();
         let item = raw.into_item(store.clone(), key, ())?;
         Ok(WithSubset {
             item,

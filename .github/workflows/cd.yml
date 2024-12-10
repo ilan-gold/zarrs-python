@@ -34,6 +34,10 @@ jobs:
           - { os: linux, manylinux: musllinux_1_2, target: armv7 }
           # windows
           - { os: windows, target: i686, python-architecture: x86 }
+        exclude:
+          # https://github.com/rust-cross/cargo-xwin/issues/76
+          - os: windows
+            target: aarch64
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
     steps:
       - uses: actions/checkout@v4

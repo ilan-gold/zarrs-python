@@ -19,6 +19,9 @@ numpy = "0.23.0"
 unsafe_cell_slice = "0.2.0"
 serde_json = "1.0.128"
 pyo3-stub-gen = "0.6.1"
+opendal = { version = "0.50.2", features = ["services-http"] }
+tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
+zarrs_opendal = "0.4.0"
 
 [profile.release]
 lto = true

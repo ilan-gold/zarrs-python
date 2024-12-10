@@ -1,4 +1,5 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
 
 use chunk_item::{ChunksItem, IntoItem};
 use concurrency::ChunkConcurrentLimitAndCodecOptions;
@@ -12,6 +13,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon_iter_concurrent_limit::iter_concurrent_limit;
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
+use store::StoreConfigType;
 use unsafe_cell_slice::UnsafeCellSlice;
 use zarrs::array::codec::{
     ArrayToBytesCodecTraits, CodecOptions, CodecOptionsBuilder, StoragePartialDecoder,
@@ -21,29 +23,24 @@ use zarrs::array::{
 };
 use zarrs::array_subset::ArraySubset;
 use zarrs::metadata::v3::MetadataV3;
-use zarrs::storage::{ReadableWritableListableStorageTraits, StorageHandle, StoreKey};
+use zarrs::storage::{ReadableWritableListableStorage, StorageHandle, StoreKey};
 
 mod chunk_item;
-mod codec_pipeline_store_filesystem;
 mod concurrency;
+mod runtime;
+mod store;
 #[cfg(test)]
 mod tests;
 mod utils;
 
-use codec_pipeline_store_filesystem::CodecPipelineStoreFilesystem;
 use utils::{PyErrExt, PyUntypedArrayExt};
-
-trait CodecPipelineStore: Send + Sync {
-    fn store(&self) -> Arc<dyn ReadableWritableListableStorageTraits>;
-    fn chunk_path(&self, store_path: &str) -> PyResult<String>;
-}
 
 // TODO: Use a OnceLock for store with get_or_try_init when stabilised?
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct CodecPipelineImpl {
     pub(crate) codec_chain: Arc<CodecChain>,
-    pub(crate) store: Mutex<Option<Arc<dyn CodecPipelineStore>>>,
+    pub(crate) store: Mutex<Option<ReadableWritableListableStorage>>,
     pub(crate) codec_options: CodecOptions,
     pub(crate) chunk_concurrent_minimum: usize,
     pub(crate) chunk_concurrent_maximum: usize,
@@ -51,28 +48,21 @@ pub struct CodecPipelineImpl {
 }
 
 impl CodecPipelineImpl {
-    fn get_store_and_path(
+    fn get_store_from_config(
         &self,
-        store_path: &str,
-    ) -> PyResult<(Arc<dyn ReadableWritableListableStorageTraits>, String)> {
+        config: &StoreConfigType,
+    ) -> PyResult<ReadableWritableListableStorage> {
         let mut gstore = self.store.lock().map_err(|_| {
             PyErr::new::<PyRuntimeError, _>("failed to lock the store mutex".to_string())
         })?;
 
-        #[allow(clippy::collapsible_if)]
-        if gstore.is_none() {
-            if store_path.starts_with("file://") {
-                *gstore = Some(Arc::new(CodecPipelineStoreFilesystem::new()?));
-            }
-            // TODO: Add support for more stores
-        }
-
+        // TODO: Request upstream change to get store on codec pipeline initialisation, do not want to do all of this here
         if let Some(gstore) = gstore.as_ref() {
-            Ok((gstore.store(), gstore.chunk_path(store_path)?))
+            Ok(gstore.clone())
         } else {
-            Err(PyErr::new::<PyTypeError, _>(format!(
-                "unsupported store for {store_path}"
-            )))
+            let store: ReadableWritableListableStorage = config.try_into()?;
+            *gstore = Some(store.clone());
+            Ok(store)
         }
     }
 
@@ -84,7 +74,9 @@ impl CodecPipelineImpl {
         chunk_descriptions
             .into_iter()
             .map(|raw| {
-                let (store, path) = self.get_store_and_path(raw.store_path())?;
+                // TODO: Prefer to get the store once, and assume it is the same for all chunks
+                let store = self.get_store_from_config(raw.store_config())?;
+                let path = raw.path();
                 let key = StoreKey::new(path).map_py_err::<PyValueError>()?;
                 raw.into_item(store, key, shape)
             })
