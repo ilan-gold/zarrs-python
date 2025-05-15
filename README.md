@@ -3,9 +3,9 @@
 [![PyPI](https://img.shields.io/pypi/v/zarrs.svg)](https://pypi.org/project/zarrs)
 [![Downloads](https://static.pepy.tech/badge/zarrs/month)](https://pepy.tech/project/zarrs)
 [![Downloads](https://static.pepy.tech/badge/zarrs)](https://pepy.tech/project/zarrs)
-[![Stars](https://img.shields.io/github/stars/ilan-gold/zarrs-python?style=flat&logo=github&color=yellow)](https://github.com/ilan-gold/zarrs-python/stargazers)
-![CI](https://github.com/ilan-gold/zarrs-python/actions/workflows/ci.yml/badge.svg)
-![CD](https://github.com/ilan-gold/zarrs-python/actions/workflows/cd.yml/badge.svg)
+[![Stars](https://img.shields.io/github/stars/zarrs/zarrs-python?style=flat&logo=github&color=yellow)](https://github.com/zarrs/zarrs-python/stargazers)
+![CI](https://github.com/zarrs/zarrs-python/actions/workflows/ci.yml/badge.svg)
+![CD](https://github.com/zarrs/zarrs-python/actions/workflows/cd.yml/badge.svg)
 
 This project serves as a bridge between [`zarrs`](https://docs.rs/zarrs/latest/zarrs/) (Rust) and [`zarr`](https://zarr.readthedocs.io/en/latest/index.html) (`zarr-python`) via [`PyO3`](https://pyo3.rs/v0.22.3/).  The main goal of the project is to speed up i/o (see [`zarr_benchmarks`](https://github.com/LDeakin/zarr_benchmarks)).
 
@@ -30,7 +30,7 @@ At the moment, we only support a subset of the `zarr-python` stores:
   - [x] [HTTPFileSystem](https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.implementations.http.HTTPFileSystem)
 
 A `NotImplementedError` will be raised if a store is not supported.
-We intend to support more stores in the future: https://github.com/ilan-gold/zarrs-python/issues/44.
+We intend to support more stores in the future: https://github.com/zarrs/zarrs-python/issues/44.
 
 ### Configuration
 
