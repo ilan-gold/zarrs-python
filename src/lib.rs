@@ -22,7 +22,8 @@ use zarrs::array::codec::{
     ArrayPartialDecoderTraits, ArrayToBytesCodecTraits, CodecOptions, CodecOptionsBuilder,
 };
 use zarrs::array::{
-    copy_fill_value_into, update_array_bytes, ArrayBytes, ArraySize, CodecChain, FillValue,
+    copy_fill_value_into, update_array_bytes, ArrayBytes, ArrayBytesFixedDisjointView, ArraySize,
+    CodecChain, FillValue,
 };
 use zarrs::array_subset::ArraySubset;
 use zarrs::metadata::v3::MetadataV3;
@@ -114,7 +115,7 @@ impl CodecPipelineImpl {
         codec_options: &CodecOptions,
     ) -> PyResult<()> {
         let array_shape = item.representation().shape_u64();
-        if !chunk_subset.inbounds(&array_shape) {
+        if !chunk_subset.inbounds_shape(&array_shape) {
             return Err(PyErr::new::<PyValueError, _>(format!(
                 "chunk subset ({chunk_subset}) is out of bounds for array shape ({array_shape:?})"
             )));
@@ -134,20 +135,14 @@ impl CodecPipelineImpl {
             let chunk_bytes_old = self.retrieve_chunk_bytes(item, codec_chain, codec_options)?;
 
             // Update the chunk
-            let chunk_bytes_new = unsafe {
-                // SAFETY:
-                // - chunk_bytes_old is compatible with the chunk shape and data type size (validated on decoding)
-                // - chunk_subset is compatible with chunk_subset_bytes and the data type size (validated above)
-                // - chunk_subset is within the bounds of the chunk shape (validated above)
-                // - output bytes and output subset bytes are compatible (same data type)
-                update_array_bytes(
-                    chunk_bytes_old,
-                    &array_shape,
-                    chunk_subset,
-                    &chunk_subset_bytes,
-                    data_type_size,
-                )
-            };
+            let chunk_bytes_new = update_array_bytes(
+                chunk_bytes_old,
+                &array_shape,
+                chunk_subset,
+                &chunk_subset_bytes,
+                data_type_size,
+            )
+            .map_py_err::<PyRuntimeError>()?;
 
             // Store the updated chunk
             self.store_chunk_bytes(item, codec_chain, chunk_bytes_new, codec_options)
@@ -279,8 +274,8 @@ impl CodecPipelineImpl {
             .unique_by(|item| item.key())
             .collect::<Vec<_>>();
         let mut partial_decoder_cache: HashMap<StoreKey, Arc<dyn ArrayPartialDecoderTraits>> =
-            HashMap::new().into();
-        if partial_chunk_descriptions.len() > 0 {
+            HashMap::new();
+        if !partial_chunk_descriptions.is_empty() {
             let key_decoder_pairs = iter_concurrent_limit!(
                 chunk_concurrent_limit,
                 partial_chunk_descriptions,
@@ -308,59 +303,61 @@ impl CodecPipelineImpl {
             // For variable length data types, need a codepath with non `_into` methods.
             // Collect all the subsets and copy into value on the Python side?
             let update_chunk_subset = |item: chunk_item::WithSubset| {
+                let chunk_item::WithSubset {
+                    item,
+                    subset,
+                    chunk_subset,
+                } = item;
+                let mut output_view = unsafe {
+                    // TODO: Is the following correct?
+                    //       can we guarantee that when this function is called from Python with arbitrary arguments?
+                    // SAFETY: chunks represent disjoint array subsets
+                    ArrayBytesFixedDisjointView::new(
+                        output,
+                        // TODO: why is data_type in `item`, it should be derived from `output`, no?
+                        item.representation()
+                            .data_type()
+                            .fixed_size()
+                            .ok_or("variable length data type not supported")
+                            .map_py_err::<PyTypeError>()?,
+                        &output_shape,
+                        subset,
+                    )
+                    .map_py_err::<PyRuntimeError>()?
+                };
+
                 // See zarrs::array::Array::retrieve_chunk_subset_into
-                if is_whole_chunk(&item) {
+                if chunk_subset.start().iter().all(|&o| o == 0)
+                    && chunk_subset.shape() == item.representation().shape_u64()
+                {
                     // See zarrs::array::Array::retrieve_chunk_into
                     if let Some(chunk_encoded) = self.stores.get(&item)? {
                         // Decode the encoded data into the output buffer
                         let chunk_encoded: Vec<u8> = chunk_encoded.into();
-                        unsafe {
-                            // SAFETY:
-                            // - output is an array with output_shape elements of the item.representation data type,
-                            // - item.subset is within the bounds of output_shape.
-                            self.codec_chain.decode_into(
-                                Cow::Owned(chunk_encoded),
-                                item.representation(),
-                                &output,
-                                &output_shape,
-                                &item.subset,
-                                &codec_options,
-                            )
-                        }
+                        self.codec_chain.decode_into(
+                            Cow::Owned(chunk_encoded),
+                            item.representation(),
+                            &mut output_view,
+                            &codec_options,
+                        )
                     } else {
                         // The chunk is missing, write the fill value
-                        unsafe {
-                            // SAFETY:
-                            // - data type and fill value are confirmed to be compatible when the ChunkRepresentation is created,
-                            // - output is an array with output_shape elements of the item.representation data type,
-                            // - item.subset is within the bounds of output_shape.
-                            copy_fill_value_into(
-                                item.representation().data_type(),
-                                item.representation().fill_value(),
-                                &output,
-                                &output_shape,
-                                &item.subset,
-                            )
-                        }
+                        copy_fill_value_into(
+                            item.representation().data_type(),
+                            item.representation().fill_value(),
+                            &mut output_view,
+                        )
                     }
                 } else {
                     let key = item.key();
                     let partial_decoder = partial_decoder_cache.get(key).ok_or_else(|| {
                         PyRuntimeError::new_err(format!("Partial decoder not found for key: {key}"))
                     })?;
-                    unsafe {
-                        // SAFETY:
-                        // - output is an array with output_shape elements of the item.representation data type,
-                        // - item.subset is within the bounds of output_shape.
-                        // - item.chunk_subset has the same number of elements as item.subset.
-                        partial_decoder.partial_decode_into(
-                            &item.chunk_subset,
-                            &output,
-                            &output_shape,
-                            &item.subset,
-                            &codec_options,
-                        )
-                    }
+                    partial_decoder.partial_decode_into(
+                        &chunk_subset,
+                        &mut output_view,
+                        &codec_options,
+                    )
                 }
                 .map_py_err::<PyValueError>()
             };

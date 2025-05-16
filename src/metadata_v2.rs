@@ -1,7 +1,7 @@
 use pyo3::{exceptions::PyRuntimeError, pyfunction, PyErr, PyResult};
 use zarrs::metadata::{
-    v2::{array::ArrayMetadataV2Order, MetadataV2},
-    v3::array::data_type::DataTypeMetadataV3,
+    v2::{ArrayMetadataV2Order, MetadataV2},
+    v3::MetadataV3,
 };
 
 #[pyfunction]
@@ -35,13 +35,15 @@ pub fn codec_metadata_v2_to_v3(
 
     // FIXME: The array order, dimensionality, data type, and endianness are needed to exhaustively support all Zarr V2 data that zarrs can handle.
     // However, CodecPipeline.from_codecs does not supply this information, and CodecPipeline.evolve_from_array_spec is seemingly never called.
-    let metadata = zarrs::metadata::v2_to_v3::codec_metadata_v2_to_v3(
+    let metadata = zarrs::metadata_ext::v2_to_v3::codec_metadata_v2_to_v3(
         ArrayMetadataV2Order::C,
-        0,                         // unused with C order
-        &DataTypeMetadataV3::Bool, // FIXME
+        0,                        // unused with C order
+        &MetadataV3::new("bool"), // FIXME
         None,
         &filters,
         &compressor,
+        zarrs::config::global_config().codec_aliases_v2(),
+        zarrs::config::global_config().codec_aliases_v3(),
     )
     .map_err(|err| {
         // TODO: More informative error messages from zarrs for ArrayMetadataV2ToV3ConversionError

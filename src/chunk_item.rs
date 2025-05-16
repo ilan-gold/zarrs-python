@@ -10,7 +10,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use zarrs::{
     array::{ChunkRepresentation, DataType, FillValue},
     array_subset::ArraySubset,
-    metadata::v3::{array::data_type::DataTypeMetadataV3, MetadataV3},
+    metadata::v3::MetadataV3,
     storage::StoreKey,
 };
 
@@ -146,9 +146,11 @@ fn get_chunk_representation(
     fill_value: Vec<u8>,
 ) -> PyResult<ChunkRepresentation> {
     // Get the chunk representation
-    let data_type =
-        DataType::from_metadata(&DataTypeMetadataV3::from_metadata(&MetadataV3::new(dtype)))
-            .map_py_err::<PyRuntimeError>()?;
+    let data_type = DataType::from_metadata(
+        &MetadataV3::new(dtype),
+        zarrs::config::global_config().data_type_aliases_v3(),
+    )
+    .map_py_err::<PyRuntimeError>()?;
     let chunk_shape = chunk_shape
         .into_iter()
         .map(|x| NonZeroU64::new(x).expect("chunk shapes should always be non-zero"))
