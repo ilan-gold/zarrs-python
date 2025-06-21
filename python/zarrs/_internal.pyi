@@ -3,13 +3,12 @@
 
 import builtins
 import typing
-from enum import Enum, auto
+from enum import Enum
 
 import numpy.typing
 
 class Basic:
-    def __new__(cls, byte_interface: typing.Any, chunk_spec: typing.Any): ...
-    ...
+    def __new__(cls, byte_interface: typing.Any, chunk_spec: typing.Any) -> Basic: ...
 
 class CodecPipelineImpl:
     def __new__(
@@ -21,7 +20,7 @@ class CodecPipelineImpl:
         chunk_concurrent_minimum: builtins.int | None = None,
         chunk_concurrent_maximum: builtins.int | None = None,
         num_threads: builtins.int | None = None,
-    ): ...
+    ) -> CodecPipelineImpl: ...
     def retrieve_chunks_and_apply_index(
         self,
         chunk_descriptions: typing.Sequence[WithSubset],
@@ -46,9 +45,8 @@ class WithSubset:
         chunk_subset: typing.Sequence[slice],
         subset: typing.Sequence[slice],
         shape: typing.Sequence[builtins.int],
-    ): ...
-    ...
+    ) -> WithSubset: ...
 
 class StoreConfig(Enum):
-    Filesystem = auto()
-    Http = auto()
+    Filesystem = ...
+    Http = ...

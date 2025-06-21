@@ -9,20 +9,20 @@ name = "zarrs_python"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.23.2", features = ["abi3-py311"] }
-zarrs = { version = "0.20.0", features = ["async", "zlib", "pcodec", "bz2"] }
+pyo3 = { version = "0.25.1", features = ["abi3-py311"] }
+zarrs = { version = "0.21.2", features = ["async", "zlib", "pcodec", "bz2"] }
 rayon_iter_concurrent_limit = "0.2.0"
 rayon = "1.10.0"
 # fix for https://stackoverflow.com/questions/76593417/package-openssl-was-not-found-in-the-pkg-config-search-path
 openssl = { version = "0.10", features = ["vendored"] }
-numpy = "0.23.0"
+numpy = "0.25.0"
 unsafe_cell_slice = "0.2.0"
 serde_json = "1.0.128"
-pyo3-stub-gen = "0.7.0"
+pyo3-stub-gen = "0.9.1"
 opendal = { version = "0.53.0", features = ["services-http"] }
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 zarrs_opendal = "0.7.2"
-itertools = "0.9.0"
+itertools = "0.14.0"
 
 [profile.release]
 lto = true
